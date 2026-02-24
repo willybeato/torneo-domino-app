@@ -4,64 +4,6 @@ import pandas as pd
 # 1. Configuración de la página
 st.set_page_config(page_title="Torneo de Dominó", page_icon="🎲", layout="wide")
 
-# Estilos CSS avanzados (Optimizados para Escritorio y MÓVIL)
-st.markdown("""
-    <style>
-    /* Estilos base (Escritorio) */
-    .equipo-header {
-        background-color: #2c2f33;
-        color: white;
-        text-align: center;
-        padding: 15px;
-        border-radius: 10px 10px 0 0;
-        margin-bottom: 0px;
-        font-weight: bold;
-        font-size: 1.5em;
-    }
-    .totales-gigantes {
-        text-align: center; 
-        font-size: 4.5em; 
-        font-weight: bold;
-        margin-top: 10px;
-        line-height: 1.1;
-    }
-    .totales-meta {
-        font-size: 0.3em; 
-        color: #888;
-        font-weight: normal;
-    }
-    
-    /* 📱 OPTIMIZACIÓN ESTRICTA PARA MÓVILES */
-    @media (max-width: 768px) {
-        /* Achicar fuentes para que no desborden */
-        .equipo-header {
-            font-size: 1.1em !important;
-            padding: 10px 5px !important;
-            white-space: nowrap;
-            overflow: hidden;
-            text-overflow: ellipsis;
-        }
-        .totales-gigantes {
-            font-size: 3.2em !important;
-        }
-        
-        /* Magia: Forzar que las columnas INTERNAS del marcador NO se apilen */
-        /* Esto mantiene el Equipo A y el Equipo B uno al lado del otro siempre */
-        div[data-testid="column"] div[data-testid="stHorizontalBlock"] {
-            flex-direction: row !important;
-            flex-wrap: nowrap !important;
-            gap: 5px !important;
-        }
-        /* Hacer que se dividan el espacio 50/50 exacto en el móvil */
-        div[data-testid="column"] div[data-testid="stHorizontalBlock"] > div[data-testid="column"] {
-            width: 50% !important;
-            flex: 1 1 0% !important;
-            min-width: 0 !important;
-        }
-    }
-    </style>
-""", unsafe_allow_html=True)
-
 # 2. Inicializar variables de estado
 if 'fase' not in st.session_state:
     st.session_state.fase = 'configuracion'
@@ -85,7 +27,6 @@ if 'meta_puntos' not in st.session_state:
 # ==========================================
 # FUNCIONES AUXILIARES
 # ==========================================
-
 def recalcular_totales(manos, pareja_a, pareja_b):
     total_a = sum([m['puntos'] for m in manos if m['ganador'] == pareja_a])
     total_b = sum([m['puntos'] for m in manos if m['ganador'] == pareja_b])
@@ -171,105 +112,103 @@ elif st.session_state.fase == 'orden_inicial':
                 st.rerun()
 
 # ==========================================
-# FASE 4: Torneo en Curso (MÓVIL OPTIMIZADO)
+# FASE 4: Torneo en Curso (HTML PURO PARA MÓVIL SIN SANGRÍA)
 # ==========================================
 elif st.session_state.fase == 'torneo':
-    st.title("🏆 Torneo de Dominó")
-    
     pareja_a = st.session_state.mesa_actual[0]
     pareja_b = st.session_state.mesa_actual[1]
     meta = st.session_state.meta_puntos
 
     pts_a, pts_b = recalcular_totales(st.session_state.historial_manos_actual, pareja_a, pareja_b)
 
-    # Las columnas principales (Izquierda = Juego, Derecha = Datos)
+    # Verificamos si alguien ya ganó antes de dibujar el marcador
+    verificar_ganador_partida(pts_a, pts_b, meta, pareja_a, pareja_b)
+
     col_izq, col_der = st.columns([1.2, 1])
 
     with col_izq:
-        # --- ENCABEZADOS DE LOS EQUIPOS ---
-        col_name_a, col_name_b = st.columns(2)
-        col_name_a.markdown(f"<div class='equipo-header'>{pareja_a}</div>", unsafe_allow_html=True)
-        col_name_b.markdown(f"<div class='equipo-header'>{pareja_b}</div>", unsafe_allow_html=True)
+        # --- GENERADOR DE MARCADOR HTML ---
+        # ATENCIÓN: El HTML no debe tener espacios a la izquierda para que Streamlit no lo vuelva un bloque de código.
+        html_manos = ""
+        for i, mano in enumerate(st.session_state.historial_manos_actual):
+            p_a = mano['puntos'] if mano['ganador'] == pareja_a else 0
+            p_b = mano['puntos'] if mano['ganador'] == pareja_b else 0
+            
+            color_a = "#ffffff" if p_a > 0 else "#555555"
+            color_b = "#ffffff" if p_b > 0 else "#555555"
+            
+            html_manos += f"""<div style="display: flex; text-align: center; font-size: 1.4em; padding: 6px 0; border-bottom: 1px solid #222;">
+<div style="width: 50%; color: {color_a}; border-right: 1px solid #333;">{p_a}</div>
+<div style="width: 50%; color: {color_b};">{p_b}</div>
+</div>"""
+
+        if not html_manos:
+            html_manos = "<div style='text-align: center; color: #666; padding: 20px; font-style: italic;'>Inicia la partida agregando puntos abajo</div>"
+
+        html_marcador = f"""<div style="background-color: #0d0d0d; padding: 15px; border-radius: 12px; color: white; border: 2px solid #2a2a2a; margin-bottom: 20px; font-family: sans-serif;">
+<div style="display: flex; text-align: center; font-size: 1.3em; font-weight: bold; padding-bottom: 10px; border-bottom: 2px solid #333;">
+<div style="width: 50%; border-right: 2px solid #333; padding: 0 5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">{pareja_a}</div>
+<div style="width: 50%; padding: 0 5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">{pareja_b}</div>
+</div>
+<div style="padding: 10px 0; min-height: 120px;">
+{html_manos}
+</div>
+<div style="display: flex; text-align: center; border-top: 2px solid #333; padding-top: 15px;">
+<div style="width: 50%; border-right: 2px solid #333;">
+<div style="font-size: 3.5em; font-weight: bold; line-height: 1;">{pts_a}</div>
+<div style="color: #888; font-size: 0.9em; margin-top: 5px;">/ {meta}</div>
+</div>
+<div style="width: 50%;">
+<div style="font-size: 3.5em; font-weight: bold; line-height: 1;">{pts_b}</div>
+<div style="color: #888; font-size: 0.9em; margin-top: 5px;">/ {meta}</div>
+</div>
+</div>
+</div>"""
         
-        # --- FORMULARIOS DE ANOTACIÓN (Boton + y Número) ---
-        col_form_a, col_form_b = st.columns(2)
-        
-        with col_form_a:
-            with st.form("add_a", clear_on_submit=True):
-                ca1, ca2 = st.columns([1.5, 1])
-                pts_in_a = ca1.number_input("Pts", min_value=1, step=1, value=10, label_visibility="collapsed")
-                if ca2.form_submit_button("➕", use_container_width=True):
-                    st.session_state.historial_manos_actual.append({"ganador": pareja_a, "puntos": pts_in_a})
-                    st.rerun()
-                    
-        with col_form_b:
-            with st.form("add_b", clear_on_submit=True):
-                cb1, cb2 = st.columns([1.5, 1])
-                pts_in_b = cb1.number_input("Pts", min_value=1, step=1, value=10, label_visibility="collapsed")
-                if cb2.form_submit_button("➕", use_container_width=True):
-                    st.session_state.historial_manos_actual.append({"ganador": pareja_b, "puntos": pts_in_b})
-                    st.rerun()
+        # Inyectamos el HTML sin indentación
+        st.markdown(html_marcador, unsafe_allow_html=True)
 
-        st.divider()
+        # --- FORMULARIO PARA ANOTAR PUNTOS ---
+        st.markdown("### ✍️ Anotar")
+        with st.form("form_anotar", clear_on_submit=True):
+            ganador = st.radio("¿Quién ganó?", [pareja_a, pareja_b], horizontal=True, label_visibility="collapsed")
+            c1, c2 = st.columns([2, 1])
+            puntos = c1.number_input("Puntos", min_value=1, step=1, value=10, label_visibility="collapsed")
+            submit = c2.form_submit_button("➕ Añadir", type="primary", use_container_width=True)
+            
+            if submit:
+                st.session_state.historial_manos_actual.append({"ganador": ganador, "puntos": puntos})
+                st.rerun()
 
-        # --- TABLA DE ANOTACIONES (Historial Limpio 3 Columnas) ---
-        if st.session_state.historial_manos_actual:
-            for i, mano in enumerate(st.session_state.historial_manos_actual):
-                p_a = mano['puntos'] if mano['ganador'] == pareja_a else 0
-                p_b = mano['puntos'] if mano['ganador'] == pareja_b else 0
-                
-                # Diseño super limpio para móvil
-                c_idx, c_pta, c_ptb = st.columns([1, 2, 2])
-                c_idx.markdown(f"<div style='color: gray; padding-top: 5px; font-size: 0.9em;'>Mano {i+1}</div>", unsafe_allow_html=True)
-                c_pta.markdown(f"<div style='text-align: center; font-size: 1.4em;'>{p_a}</div>", unsafe_allow_html=True)
-                c_ptb.markdown(f"<div style='text-align: center; font-size: 1.4em;'>{p_b}</div>", unsafe_allow_html=True)
-                
-                st.markdown("<hr style='margin: 0; opacity: 0.2;'>", unsafe_allow_html=True)
-        else:
-            st.info("Escribe los puntos y usa el botón ➕ para anotar.")
-
-        # --- TOTALES GIGANTES ---
+        # --- CORRECCIONES ---
         st.write("")
-        col_tot_a, col_tot_b = st.columns(2)
-        col_tot_a.markdown(f"<div class='totales-gigantes'>{pts_a}<span class='totales-meta'>/{meta}</span></div>", unsafe_allow_html=True)
-        col_tot_b.markdown(f"<div class='totales-gigantes'>{pts_b}<span class='totales-meta'>/{meta}</span></div>", unsafe_allow_html=True)
-
-        verificar_ganador_partida(pts_a, pts_b, meta, pareja_a, pareja_b)
-
-        # --- SECCIÓN EXPANDIBLE PARA CORREGIR (Despeja la interfaz móvil) ---
-        st.write("")
-        with st.expander("🛠️ Corregir / Borrar Manos Anteriores"):
+        with st.expander("🛠️ Corregir / Borrar Manos"):
             if st.session_state.historial_manos_actual:
-                # Crear opciones para el SelectBox
-                opciones = [f"Mano {i+1}: {m['puntos']} pts a {m['ganador']}" for i, m in enumerate(st.session_state.historial_manos_actual)]
-                seleccion = st.selectbox("Selecciona la mano que deseas corregir:", opciones)
+                opciones = [f"Mano {i+1}: {m['puntos']} pts ({m['ganador']})" for i, m in enumerate(st.session_state.historial_manos_actual)]
+                seleccion = st.selectbox("Selecciona la mano:", opciones)
                 idx = opciones.index(seleccion)
                 mano_to_edit = st.session_state.historial_manos_actual[idx]
                 
-                # Controles de edición
                 with st.form("form_edit_row"):
-                    e_col1, e_col2 = st.columns(2)
-                    edit_ganador = e_col1.selectbox("Ganador", [pareja_a, pareja_b], index=0 if mano_to_edit['ganador'] == pareja_a else 1)
-                    edit_puntos = e_col2.number_input("Puntos", min_value=1, step=1, value=mano_to_edit['puntos'])
-                    
-                    if st.form_submit_button("✔️ Guardar Corrección", use_container_width=True):
+                    edit_ganador = st.radio("Corregir Ganador", [pareja_a, pareja_b], index=0 if mano_to_edit['ganador'] == pareja_a else 1, horizontal=True)
+                    edit_puntos = st.number_input("Corregir Puntos", min_value=1, step=1, value=mano_to_edit['puntos'])
+                    if st.form_submit_button("✔️ Guardar Cambios", use_container_width=True):
                         st.session_state.historial_manos_actual[idx] = {'ganador': edit_ganador, 'puntos': edit_puntos}
                         st.rerun()
                 
-                # Botón de borrar fuera del form para evitar pulsarlo por error
-                if st.button("❌ Borrar esta mano definitivamente", use_container_width=True):
+                if st.button("❌ Borrar esta mano", use_container_width=True):
                     st.session_state.historial_manos_actual.pop(idx)
                     st.rerun()
             else:
-                st.write("Aún no hay manos para corregir.")
+                st.write("Aún no hay puntos para corregir.")
 
     # ==========================================
     # COLUMNA DERECHA (Estadísticas y Espera)
     # ==========================================
     with col_der:
-        st.subheader("⏳ En Fila de Espera")
+        st.subheader("⏳ Fila de Espera")
         for i, pareja_espera in enumerate(st.session_state.fila_espera):
-            if i == 0: st.info(f"**1. {pareja_espera}** *(Entra en la siguiente)*")
+            if i == 0: st.success(f"**1. {pareja_espera}** *(Siguientes)*")
             else: st.write(f"{i+1}. {pareja_espera}")
         
         st.divider()

@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 import io
+import streamlit.components.v1 as components
 
 # 1. Configuración de la página
 st.set_page_config(page_title="Anotador de Dominó", page_icon="🎲", layout="wide")
@@ -175,7 +176,7 @@ elif st.session_state.fase == 'torneo':
     col_izq, col_der = st.columns([1.2, 1])
 
     with col_izq:
-        # --- MARCADOR HTML (SIN SALTOS DE LÍNEA PARA EVITAR BUGS DE MARKDOWN) ---
+        # --- MARCADOR HTML ---
         html_manos = ""
         for i, mano in enumerate(st.session_state.historial_manos_actual):
             p_a = mano['puntos'] if mano['ganador'] == pareja_a else 0
@@ -183,34 +184,48 @@ elif st.session_state.fase == 'torneo':
             c_a = "#ffffff" if p_a > 0 else "#555555"
             c_b = "#ffffff" if p_b > 0 else "#555555"
             
-            # Todo en una línea
             html_manos += f"<div style='display:flex; text-align:center; font-size:1.4em; padding:6px 0; border-bottom:1px solid #222;'><div style='width:50%; color:{c_a}; border-right:1px solid #333;'>{p_a}</div><div style='width:50%; color:{c_b};'>{p_b}</div></div>"
 
         if not html_manos:
             html_manos = "<div style='text-align:center; color:#666; padding:20px; font-style:italic;'>Inicia la partida agregando puntos abajo</div>"
 
-        # Todo el marcador en una sola línea de código infinita
         html_marcador = f"<div style='background-color:#0d0d0d; padding:15px; border-radius:12px; color:white; border:2px solid #2a2a2a; margin-bottom:20px; font-family:sans-serif;'><div style='display:flex; text-align:center; font-size:1.3em; font-weight:bold; padding-bottom:10px; border-bottom:2px solid #333;'><div style='width:50%; border-right:2px solid #333; padding:0 5px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;'>{pareja_a}</div><div style='width:50%; padding:0 5px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;'>{pareja_b}</div></div><div style='padding:10px 0; min-height:120px;'>{html_manos}</div><div style='display:flex; text-align:center; border-top:2px solid #333; padding-top:15px;'><div style='width:50%; border-right:2px solid #333;'><div style='font-size:3.5em; font-weight:bold; line-height:1;'>{pts_a}</div><div style='color:#888; font-size:0.9em; margin-top:5px;'>/ {meta}</div></div><div style='width:50%;'><div style='font-size:3.5em; font-weight:bold; line-height:1;'>{pts_b}</div><div style='color:#888; font-size:0.9em; margin-top:5px;'>/ {meta}</div></div></div></div>"
         
         st.markdown(html_marcador, unsafe_allow_html=True)
 
-        # --- FORMULARIO OPTIMIZADO PARA ENTER (BUG FIX STREAMLIT) ---
+        # --- FORMULARIO PARA ANOTAR PUNTOS ---
         st.markdown("### ✍️ Anotar")
         with st.form("form_anotar", clear_on_submit=True):
             ganador = st.radio("¿Quién ganó?", [pareja_a, pareja_b], horizontal=True, label_visibility="collapsed")
             c1, c2 = st.columns([2, 1])
             
-            # SOLUCIÓN: Usamos text_input. Si empieza vacío, Streamlit no falla al darle Enter.
             puntos_str = c1.text_input("Puntos", value="", placeholder="Escribe puntos y dale a Enter", label_visibility="collapsed")
             submit = c2.form_submit_button("➕ Añadir", type="primary", use_container_width=True)
             
             if submit:
-                # Revisar que el usuario haya escrito números y que sean mayor a 0
                 if puntos_str.strip().isdigit() and int(puntos_str) > 0:
                     st.session_state.historial_manos_actual.append({"ganador": ganador, "puntos": int(puntos_str)})
                     st.rerun()
                 else:
                     st.warning("⚠️ Debes escribir un número válido antes de añadir.")
+
+        # ==========================================
+        # TRUCO DE JAVASCRIPT PARA FORZAR TECLADO NUMÉRICO
+        # ==========================================
+        components.html(
+            """
+            <script>
+            // Buscamos el input exacto usando el texto del placeholder que le pusimos
+            const inputs = window.parent.document.querySelectorAll('input[placeholder="Escribe puntos y dale a Enter"]');
+            inputs.forEach(function(input) {
+                // Le decimos al navegador del celular que saque el teclado de números
+                input.setAttribute('inputmode', 'numeric');
+                input.setAttribute('pattern', '[0-9]*');
+            });
+            </script>
+            """,
+            height=0, width=0
+        )
 
         # --- SECCIÓN DE CORRECCIONES ---
         st.write("")
@@ -223,7 +238,6 @@ elif st.session_state.fase == 'torneo':
                 
                 with st.form("form_edit_row"):
                     edit_ganador = st.radio("Corregir Ganador", [pareja_a, pareja_b], index=0 if mano_to_edit['ganador'] == pareja_a else 1, horizontal=True)
-                    # En la edición seguimos usando number_input porque aquí siempre hay un número por defecto
                     edit_puntos = st.number_input("Corregir Puntos", min_value=1, step=1, value=mano_to_edit['puntos'])
                     if st.form_submit_button("✔️ Guardar Cambios", use_container_width=True):
                         st.session_state.historial_manos_actual[idx] = {'ganador': edit_ganador, 'puntos': edit_puntos}

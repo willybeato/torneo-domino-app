@@ -1,12 +1,15 @@
 import streamlit as st
 import pandas as pd
+import io
 
 # 1. Configuración de la página
-st.set_page_config(page_title="Torneo de Dominó", page_icon="🎲", layout="wide")
+st.set_page_config(page_title="Anotador de Dominó", page_icon="🎲", layout="wide")
 
 # 2. Inicializar variables de estado
 if 'fase' not in st.session_state:
-    st.session_state.fase = 'configuracion'
+    st.session_state.fase = 'seleccion_modo'
+if 'modo_juego' not in st.session_state:
+    st.session_state.modo_juego = 'torneo' # Puede ser 'torneo' o 'duelo'
 if 'num_parejas' not in st.session_state:
     st.session_state.num_parejas = 4
 if 'nombres_parejas' not in st.session_state:
@@ -44,52 +47,106 @@ def verificar_ganador_partida(total_a, total_b, meta, pareja_a, pareja_b):
         pts_finales_ganador, pts_finales_perdedor = total_b, total_a
     
     if ganador_partida:
+        # Guardar estadísticas globales
         st.session_state.parejas_stats[ganador_partida]['victorias'] += 1
         st.session_state.parejas_stats[ganador_partida]['puntos_totales'] += pts_finales_ganador
         st.session_state.parejas_stats[perdedor_partida]['puntos_totales'] += pts_finales_perdedor
         
         num_partida = len(st.session_state.historial_partidas) + 1
         st.session_state.historial_partidas.append({
-            "Partida": f"#{num_partida}", "Ganador": ganador_partida,
-            "Perdedor": perdedor_partida, "Marcador": f"{pts_finales_ganador} a {pts_finales_perdedor}"
+            "Partida": f"#{num_partida}", 
+            "Ganador": ganador_partida,
+            "Perdedor": perdedor_partida, 
+            "Marcador": f"{pts_finales_ganador} a {pts_finales_perdedor}"
         })
         
         st.balloons()
         st.success(f"🎉 ¡{ganador_partida} ganó la partida con {pts_finales_ganador} puntos! 🎉")
         
-        st.session_state.fila_espera.append(perdedor_partida)
-        siguiente = st.session_state.fila_espera.pop(0)
-        st.session_state.mesa_actual = [ganador_partida, siguiente]
+        # Rotación dependiendo del modo de juego
+        if st.session_state.modo_juego == 'torneo':
+            st.session_state.fila_espera.append(perdedor_partida)
+            siguiente = st.session_state.fila_espera.pop(0)
+            st.session_state.mesa_actual = [ganador_partida, siguiente]
+        else:
+            # Si es duelo fijo, la mesa se queda exactamente igual para la revancha
+            pass 
         
+        # Reiniciar las manos anotadas para empezar de cero la siguiente partida
         st.session_state.historial_manos_actual = []
         st.rerun()
 
+def convertir_df_a_csv(df):
+    return df.to_csv(index=False).encode('utf-8')
+
 # ==========================================
-# FASE 1, 2 y 3 (Configuración Inicial)
+# FASE 0: SELECCIÓN DE MODO
 # ==========================================
-if st.session_state.fase == 'configuracion':
-    st.title("⚙️ Configuración del Torneo")
-    cantidad = st.number_input("Cantidad de parejas", min_value=3, max_value=20, value=4, step=1)
-    meta = st.number_input("Puntos para ganar (Meta)", min_value=50, max_value=500, value=200, step=50)
+if st.session_state.fase == 'seleccion_modo':
+    st.title("🎲 Anotador de Dominó")
+    st.subheader("¿Cómo van a jugar hoy?")
+    
+    modo = st.radio(
+        "Elige el formato:", 
+        ["🏆 Torneo (Rey de la mesa, 3 o más parejas)", "⚔️ Duelo Fijo (Solo 2 parejas, revanchas continuas)"],
+        index=0
+    )
+    
+    if st.button("Siguiente 👉", type="primary", use_container_width=True):
+        if "Torneo" in modo:
+            st.session_state.modo_juego = 'torneo'
+        else:
+            st.session_state.modo_juego = 'duelo'
+            st.session_state.num_parejas = 2 # Fijamos a 2 parejas
+        st.session_state.fase = 'configuracion'
+        st.rerun()
+
+# ==========================================
+# FASE 1: CONFIGURACIÓN
+# ==========================================
+elif st.session_state.fase == 'configuracion':
+    st.title("⚙️ Configuración")
+    
+    if st.session_state.modo_juego == 'torneo':
+        cantidad = st.number_input("Cantidad total de parejas jugando", min_value=3, max_value=20, value=4, step=1)
+    else:
+        st.info("Modo Duelo Fijo: Se jugará un mano a mano constante entre 2 parejas.")
+        cantidad = 2
+        
+    meta = st.number_input("¿A cuántos puntos se gana la partida? (La Meta)", min_value=50, max_value=500, value=200, step=50)
+    
     if st.button("Siguiente 👉"):
         st.session_state.num_parejas = cantidad
         st.session_state.meta_puntos = meta
         st.session_state.fase = 'registro'
         st.rerun()
 
+# ==========================================
+# FASE 2: REGISTRO DE NOMBRES
+# ==========================================
 elif st.session_state.fase == 'registro':
     st.title("📝 Nombres de las Parejas")
     with st.form("form_nombres"):
-        nombres_input = [st.text_input(f"Pareja {i+1}", f"Pareja {i+1}") for i in range(st.session_state.num_parejas)]
+        nombres_input = [st.text_input(f"Nombre Pareja {i+1}", f"Pareja {i+1}") for i in range(st.session_state.num_parejas)]
         if st.form_submit_button("Guardar Nombres 💾"):
             if len(set(nombres_input)) < len(nombres_input):
                 st.error("Usa nombres diferentes para cada pareja.")
             else:
                 st.session_state.nombres_parejas = nombres_input
                 st.session_state.parejas_stats = {nom: {'victorias': 0, 'puntos_totales': 0} for nom in nombres_input}
-                st.session_state.fase = 'orden_inicial'
+                
+                if st.session_state.modo_juego == 'torneo':
+                    st.session_state.fase = 'orden_inicial'
+                else:
+                    # Si es Duelo, no hay fila de espera, pasan directo a jugar
+                    st.session_state.mesa_actual = [nombres_input[0], nombres_input[1]]
+                    st.session_state.fila_espera = []
+                    st.session_state.fase = 'torneo'
                 st.rerun()
 
+# ==========================================
+# FASE 3: ORDEN (SÓLO PARA TORNEO)
+# ==========================================
 elif st.session_state.fase == 'orden_inicial':
     st.title("🪑 Orden de Inicio")
     nombres = st.session_state.nombres_parejas
@@ -112,7 +169,7 @@ elif st.session_state.fase == 'orden_inicial':
                 st.rerun()
 
 # ==========================================
-# FASE 4: Torneo en Curso (HTML PURO PARA MÓVIL SIN SANGRÍA)
+# FASE 4: PARTIDA EN CURSO (HTML PURO MÓVIL)
 # ==========================================
 elif st.session_state.fase == 'torneo':
     pareja_a = st.session_state.mesa_actual[0]
@@ -121,19 +178,16 @@ elif st.session_state.fase == 'torneo':
 
     pts_a, pts_b = recalcular_totales(st.session_state.historial_manos_actual, pareja_a, pareja_b)
 
-    # Verificamos si alguien ya ganó antes de dibujar el marcador
+    # Verificar si alguien ya ganó y aplicar rotación según el modo
     verificar_ganador_partida(pts_a, pts_b, meta, pareja_a, pareja_b)
 
     col_izq, col_der = st.columns([1.2, 1])
 
     with col_izq:
-        # --- GENERADOR DE MARCADOR HTML ---
-        # ATENCIÓN: El HTML no debe tener espacios a la izquierda para que Streamlit no lo vuelva un bloque de código.
         html_manos = ""
         for i, mano in enumerate(st.session_state.historial_manos_actual):
             p_a = mano['puntos'] if mano['ganador'] == pareja_a else 0
             p_b = mano['puntos'] if mano['ganador'] == pareja_b else 0
-            
             color_a = "#ffffff" if p_a > 0 else "#555555"
             color_b = "#ffffff" if p_b > 0 else "#555555"
             
@@ -165,10 +219,8 @@ elif st.session_state.fase == 'torneo':
 </div>
 </div>"""
         
-        # Inyectamos el HTML sin indentación
         st.markdown(html_marcador, unsafe_allow_html=True)
 
-        # --- FORMULARIO PARA ANOTAR PUNTOS ---
         st.markdown("### ✍️ Anotar")
         with st.form("form_anotar", clear_on_submit=True):
             ganador = st.radio("¿Quién ganó?", [pareja_a, pareja_b], horizontal=True, label_visibility="collapsed")
@@ -180,7 +232,6 @@ elif st.session_state.fase == 'torneo':
                 st.session_state.historial_manos_actual.append({"ganador": ganador, "puntos": puntos})
                 st.rerun()
 
-        # --- CORRECCIONES ---
         st.write("")
         with st.expander("🛠️ Corregir / Borrar Manos"):
             if st.session_state.historial_manos_actual:
@@ -202,16 +253,18 @@ elif st.session_state.fase == 'torneo':
             else:
                 st.write("Aún no hay puntos para corregir.")
 
-    # ==========================================
-    # COLUMNA DERECHA (Estadísticas y Espera)
-    # ==========================================
     with col_der:
-        st.subheader("⏳ Fila de Espera")
-        for i, pareja_espera in enumerate(st.session_state.fila_espera):
-            if i == 0: st.success(f"**1. {pareja_espera}** *(Siguientes)*")
-            else: st.write(f"{i+1}. {pareja_espera}")
-        
-        st.divider()
+        # Solo mostrar fila de espera si estamos en Torneo
+        if st.session_state.modo_juego == 'torneo':
+            st.subheader("⏳ Fila de Espera")
+            for i, pareja_espera in enumerate(st.session_state.fila_espera):
+                if i == 0: st.success(f"**1. {pareja_espera}** *(Siguientes)*")
+                else: st.write(f"{i+1}. {pareja_espera}")
+            st.divider()
+        else:
+            st.info("⚔️ **Modo Duelo Activo:** Las parejas juegan directo sin rotaciones.")
+            st.divider()
+
         st.header("📊 Tabla General")
         datos = [{"Pareja": p, "Victorias": s['victorias'], "Puntos Totales": s['puntos_totales']} for p, s in st.session_state.parejas_stats.items()]
         df_pos = pd.DataFrame(datos).sort_values(by=["Victorias", "Puntos Totales"], ascending=[False, False]).reset_index(drop=True)
@@ -221,11 +274,22 @@ elif st.session_state.fase == 'torneo':
         st.divider()
         st.header("📜 Historial Completo")
         if st.session_state.historial_partidas:
-            st.dataframe(pd.DataFrame(st.session_state.historial_partidas).iloc[::-1], use_container_width=True, hide_index=True)
+            df_historial = pd.DataFrame(st.session_state.historial_partidas)
+            st.dataframe(df_historial.iloc[::-1], use_container_width=True, hide_index=True)
+            
+            # --- NUEVO: BOTÓN DE DESCARGA EN EXCEL (CSV) ---
+            csv = convertir_df_a_csv(df_historial)
+            st.download_button(
+                label="📥 Descargar Historial (Excel/CSV)",
+                data=csv,
+                file_name='historial_domino.csv',
+                mime='text/csv',
+                use_container_width=True
+            )
         else:
             st.info("No hay partidas finalizadas aún.")
 
     st.divider()
-    if st.button("⚠️ Terminar Torneo y Reiniciar Datos"):
+    if st.button("⚠️ Terminar y Reiniciar TODO", type="secondary"):
         st.session_state.clear()
         st.rerun()

@@ -9,7 +9,7 @@ st.set_page_config(page_title="Anotador de Dominó", page_icon="🎲", layout="w
 if 'fase' not in st.session_state:
     st.session_state.fase = 'seleccion_modo'
 if 'modo_juego' not in st.session_state:
-    st.session_state.modo_juego = 'torneo' # Puede ser 'torneo' o 'duelo'
+    st.session_state.modo_juego = 'torneo'
 if 'num_parejas' not in st.session_state:
     st.session_state.num_parejas = 4
 if 'nombres_parejas' not in st.session_state:
@@ -47,7 +47,6 @@ def verificar_ganador_partida(total_a, total_b, meta, pareja_a, pareja_b):
         pts_finales_ganador, pts_finales_perdedor = total_b, total_a
     
     if ganador_partida:
-        # Guardar estadísticas globales
         st.session_state.parejas_stats[ganador_partida]['victorias'] += 1
         st.session_state.parejas_stats[ganador_partida]['puntos_totales'] += pts_finales_ganador
         st.session_state.parejas_stats[perdedor_partida]['puntos_totales'] += pts_finales_perdedor
@@ -63,16 +62,11 @@ def verificar_ganador_partida(total_a, total_b, meta, pareja_a, pareja_b):
         st.balloons()
         st.success(f"🎉 ¡{ganador_partida} ganó la partida con {pts_finales_ganador} puntos! 🎉")
         
-        # Rotación dependiendo del modo de juego
         if st.session_state.modo_juego == 'torneo':
             st.session_state.fila_espera.append(perdedor_partida)
             siguiente = st.session_state.fila_espera.pop(0)
             st.session_state.mesa_actual = [ganador_partida, siguiente]
-        else:
-            # Si es duelo fijo, la mesa se queda exactamente igual para la revancha
-            pass 
         
-        # Reiniciar las manos anotadas para empezar de cero la siguiente partida
         st.session_state.historial_manos_actual = []
         st.rerun()
 
@@ -97,7 +91,7 @@ if st.session_state.fase == 'seleccion_modo':
             st.session_state.modo_juego = 'torneo'
         else:
             st.session_state.modo_juego = 'duelo'
-            st.session_state.num_parejas = 2 # Fijamos a 2 parejas
+            st.session_state.num_parejas = 2
         st.session_state.fase = 'configuracion'
         st.rerun()
 
@@ -138,7 +132,6 @@ elif st.session_state.fase == 'registro':
                 if st.session_state.modo_juego == 'torneo':
                     st.session_state.fase = 'orden_inicial'
                 else:
-                    # Si es Duelo, no hay fila de espera, pasan directo a jugar
                     st.session_state.mesa_actual = [nombres_input[0], nombres_input[1]]
                     st.session_state.fila_espera = []
                     st.session_state.fase = 'torneo'
@@ -169,7 +162,7 @@ elif st.session_state.fase == 'orden_inicial':
                 st.rerun()
 
 # ==========================================
-# FASE 4: PARTIDA EN CURSO (HTML PURO MÓVIL)
+# FASE 4: PARTIDA EN CURSO
 # ==========================================
 elif st.session_state.fase == 'torneo':
     pareja_a = st.session_state.mesa_actual[0]
@@ -177,61 +170,49 @@ elif st.session_state.fase == 'torneo':
     meta = st.session_state.meta_puntos
 
     pts_a, pts_b = recalcular_totales(st.session_state.historial_manos_actual, pareja_a, pareja_b)
-
-    # Verificar si alguien ya ganó y aplicar rotación según el modo
     verificar_ganador_partida(pts_a, pts_b, meta, pareja_a, pareja_b)
 
     col_izq, col_der = st.columns([1.2, 1])
 
     with col_izq:
+        # --- MARCADOR HTML (SIN SALTOS DE LÍNEA PARA EVITAR BUGS DE MARKDOWN) ---
         html_manos = ""
         for i, mano in enumerate(st.session_state.historial_manos_actual):
             p_a = mano['puntos'] if mano['ganador'] == pareja_a else 0
             p_b = mano['puntos'] if mano['ganador'] == pareja_b else 0
-            color_a = "#ffffff" if p_a > 0 else "#555555"
-            color_b = "#ffffff" if p_b > 0 else "#555555"
+            c_a = "#ffffff" if p_a > 0 else "#555555"
+            c_b = "#ffffff" if p_b > 0 else "#555555"
             
-            html_manos += f"""<div style="display: flex; text-align: center; font-size: 1.4em; padding: 6px 0; border-bottom: 1px solid #222;">
-<div style="width: 50%; color: {color_a}; border-right: 1px solid #333;">{p_a}</div>
-<div style="width: 50%; color: {color_b};">{p_b}</div>
-</div>"""
+            # Todo en una línea
+            html_manos += f"<div style='display:flex; text-align:center; font-size:1.4em; padding:6px 0; border-bottom:1px solid #222;'><div style='width:50%; color:{c_a}; border-right:1px solid #333;'>{p_a}</div><div style='width:50%; color:{c_b};'>{p_b}</div></div>"
 
         if not html_manos:
-            html_manos = "<div style='text-align: center; color: #666; padding: 20px; font-style: italic;'>Inicia la partida agregando puntos abajo</div>"
+            html_manos = "<div style='text-align:center; color:#666; padding:20px; font-style:italic;'>Inicia la partida agregando puntos abajo</div>"
 
-        html_marcador = f"""<div style="background-color: #0d0d0d; padding: 15px; border-radius: 12px; color: white; border: 2px solid #2a2a2a; margin-bottom: 20px; font-family: sans-serif;">
-<div style="display: flex; text-align: center; font-size: 1.3em; font-weight: bold; padding-bottom: 10px; border-bottom: 2px solid #333;">
-<div style="width: 50%; border-right: 2px solid #333; padding: 0 5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">{pareja_a}</div>
-<div style="width: 50%; padding: 0 5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">{pareja_b}</div>
-</div>
-<div style="padding: 10px 0; min-height: 120px;">
-{html_manos}
-</div>
-<div style="display: flex; text-align: center; border-top: 2px solid #333; padding-top: 15px;">
-<div style="width: 50%; border-right: 2px solid #333;">
-<div style="font-size: 3.5em; font-weight: bold; line-height: 1;">{pts_a}</div>
-<div style="color: #888; font-size: 0.9em; margin-top: 5px;">/ {meta}</div>
-</div>
-<div style="width: 50%;">
-<div style="font-size: 3.5em; font-weight: bold; line-height: 1;">{pts_b}</div>
-<div style="color: #888; font-size: 0.9em; margin-top: 5px;">/ {meta}</div>
-</div>
-</div>
-</div>"""
+        # Todo el marcador en una sola línea de código infinita
+        html_marcador = f"<div style='background-color:#0d0d0d; padding:15px; border-radius:12px; color:white; border:2px solid #2a2a2a; margin-bottom:20px; font-family:sans-serif;'><div style='display:flex; text-align:center; font-size:1.3em; font-weight:bold; padding-bottom:10px; border-bottom:2px solid #333;'><div style='width:50%; border-right:2px solid #333; padding:0 5px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;'>{pareja_a}</div><div style='width:50%; padding:0 5px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;'>{pareja_b}</div></div><div style='padding:10px 0; min-height:120px;'>{html_manos}</div><div style='display:flex; text-align:center; border-top:2px solid #333; padding-top:15px;'><div style='width:50%; border-right:2px solid #333;'><div style='font-size:3.5em; font-weight:bold; line-height:1;'>{pts_a}</div><div style='color:#888; font-size:0.9em; margin-top:5px;'>/ {meta}</div></div><div style='width:50%;'><div style='font-size:3.5em; font-weight:bold; line-height:1;'>{pts_b}</div><div style='color:#888; font-size:0.9em; margin-top:5px;'>/ {meta}</div></div></div></div>"
         
         st.markdown(html_marcador, unsafe_allow_html=True)
 
+        # --- FORMULARIO OPTIMIZADO PARA ENTER (BUG FIX STREAMLIT) ---
         st.markdown("### ✍️ Anotar")
         with st.form("form_anotar", clear_on_submit=True):
             ganador = st.radio("¿Quién ganó?", [pareja_a, pareja_b], horizontal=True, label_visibility="collapsed")
             c1, c2 = st.columns([2, 1])
-            puntos = c1.number_input("Puntos", min_value=1, step=1, value=10, label_visibility="collapsed")
+            
+            # SOLUCIÓN: Usamos text_input. Si empieza vacío, Streamlit no falla al darle Enter.
+            puntos_str = c1.text_input("Puntos", value="", placeholder="Escribe puntos y dale a Enter", label_visibility="collapsed")
             submit = c2.form_submit_button("➕ Añadir", type="primary", use_container_width=True)
             
             if submit:
-                st.session_state.historial_manos_actual.append({"ganador": ganador, "puntos": puntos})
-                st.rerun()
+                # Revisar que el usuario haya escrito números y que sean mayor a 0
+                if puntos_str.strip().isdigit() and int(puntos_str) > 0:
+                    st.session_state.historial_manos_actual.append({"ganador": ganador, "puntos": int(puntos_str)})
+                    st.rerun()
+                else:
+                    st.warning("⚠️ Debes escribir un número válido antes de añadir.")
 
+        # --- SECCIÓN DE CORRECCIONES ---
         st.write("")
         with st.expander("🛠️ Corregir / Borrar Manos"):
             if st.session_state.historial_manos_actual:
@@ -242,6 +223,7 @@ elif st.session_state.fase == 'torneo':
                 
                 with st.form("form_edit_row"):
                     edit_ganador = st.radio("Corregir Ganador", [pareja_a, pareja_b], index=0 if mano_to_edit['ganador'] == pareja_a else 1, horizontal=True)
+                    # En la edición seguimos usando number_input porque aquí siempre hay un número por defecto
                     edit_puntos = st.number_input("Corregir Puntos", min_value=1, step=1, value=mano_to_edit['puntos'])
                     if st.form_submit_button("✔️ Guardar Cambios", use_container_width=True):
                         st.session_state.historial_manos_actual[idx] = {'ganador': edit_ganador, 'puntos': edit_puntos}
@@ -254,7 +236,6 @@ elif st.session_state.fase == 'torneo':
                 st.write("Aún no hay puntos para corregir.")
 
     with col_der:
-        # Solo mostrar fila de espera si estamos en Torneo
         if st.session_state.modo_juego == 'torneo':
             st.subheader("⏳ Fila de Espera")
             for i, pareja_espera in enumerate(st.session_state.fila_espera):
@@ -277,7 +258,6 @@ elif st.session_state.fase == 'torneo':
             df_historial = pd.DataFrame(st.session_state.historial_partidas)
             st.dataframe(df_historial.iloc[::-1], use_container_width=True, hide_index=True)
             
-            # --- NUEVO: BOTÓN DE DESCARGA EN EXCEL (CSV) ---
             csv = convertir_df_a_csv(df_historial)
             st.download_button(
                 label="📥 Descargar Historial (Excel/CSV)",

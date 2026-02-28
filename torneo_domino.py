@@ -1,32 +1,92 @@
 import streamlit as st
 import pandas as pd
 import io
+import json
+import os
 import streamlit.components.v1 as components
 
 # 1. Configuración de la página
 st.set_page_config(page_title="Anotador de Dominó", page_icon="🎲", layout="wide")
 
-# 2. Inicializar variables de estado
+ARCHIVO_BACKUP = "backup_domino.json"
+
+# ==========================================
+# FUNCIONES DE AUTO-GUARDADO
+# ==========================================
+def guardar_backup():
+    """Guarda todo el estado actual en un archivo JSON."""
+    datos = {
+        'fase': st.session_state.fase,
+        'modo_juego': st.session_state.modo_juego,
+        'num_parejas': st.session_state.num_parejas,
+        'nombres_parejas': st.session_state.nombres_parejas,
+        'parejas_stats': st.session_state.parejas_stats,
+        'mesa_actual': st.session_state.mesa_actual,
+        'fila_espera': st.session_state.fila_espera,
+        'historial_partidas': st.session_state.historial_partidas,
+        'historial_manos_actual': st.session_state.historial_manos_actual,
+        'meta_puntos': st.session_state.meta_puntos
+    }
+    with open(ARCHIVO_BACKUP, 'w', encoding='utf-8') as f:
+        json.dump(datos, f)
+
+def cargar_backup():
+    """Intenta cargar los datos del archivo JSON si existe."""
+    if os.path.exists(ARCHIVO_BACKUP):
+        try:
+            with open(ARCHIVO_BACKUP, 'r', encoding='utf-8') as f:
+                datos = json.load(f)
+                for key, value in datos.items():
+                    st.session_state[key] = value
+            return True
+        except:
+            return False
+    return False
+
+# 2. Inicializar variables de estado (Con Auto-Recuperación)
 if 'fase' not in st.session_state:
-    st.session_state.fase = 'seleccion_modo'
-if 'modo_juego' not in st.session_state:
-    st.session_state.modo_juego = 'torneo'
-if 'num_parejas' not in st.session_state:
-    st.session_state.num_parejas = 4
-if 'nombres_parejas' not in st.session_state:
-    st.session_state.nombres_parejas = []
-if 'parejas_stats' not in st.session_state:
-    st.session_state.parejas_stats = {}
-if 'mesa_actual' not in st.session_state:
-    st.session_state.mesa_actual = []
-if 'fila_espera' not in st.session_state:
-    st.session_state.fila_espera = []
-if 'historial_partidas' not in st.session_state:
-    st.session_state.historial_partidas = []
-if 'historial_manos_actual' not in st.session_state:
-    st.session_state.historial_manos_actual = []
-if 'meta_puntos' not in st.session_state:
-    st.session_state.meta_puntos = 200
+    cargado = cargar_backup()
+    if not cargado:
+        st.session_state.fase = 'seleccion_modo'
+        st.session_state.modo_juego = 'torneo'
+        st.session_state.num_parejas = 4
+        st.session_state.nombres_parejas = []
+        st.session_state.parejas_stats = {}
+        st.session_state.mesa_actual = []
+        st.session_state.fila_espera = []
+        st.session_state.historial_partidas = []
+        st.session_state.historial_manos_actual = []
+        st.session_state.meta_puntos = 200
+
+# ==========================================
+# CÓDIGO ANTI-SUEÑO (Wake Lock API)
+# Evita que la pantalla del celular se apague sola
+# ==========================================
+components.html(
+    """
+    <script>
+    let wakeLock = null;
+    const requestWakeLock = async () => {
+        try {
+            if ('wakeLock' in navigator) {
+                wakeLock = await navigator.wakeLock.request('screen');
+            }
+        } catch (err) {
+            console.log('No se pudo activar el modo pantalla siempre encendida.');
+        }
+    };
+    requestWakeLock();
+    // Re-activar si el usuario cambia de pestaña y vuelve
+    document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'visible') {
+            requestWakeLock();
+        }
+    });
+    </script>
+    """,
+    height=0, width=0
+)
+
 
 # ==========================================
 # FUNCIONES AUXILIARES
@@ -69,6 +129,8 @@ def verificar_ganador_partida(total_a, total_b, meta, pareja_a, pareja_b):
             st.session_state.mesa_actual = [ganador_partida, siguiente]
         
         st.session_state.historial_manos_actual = []
+        
+        guardar_backup() # Guardamos antes de recargar
         st.rerun()
 
 def convertir_df_a_csv(df):
@@ -94,6 +156,8 @@ if st.session_state.fase == 'seleccion_modo':
             st.session_state.modo_juego = 'duelo'
             st.session_state.num_parejas = 2
         st.session_state.fase = 'configuracion'
+        
+        guardar_backup()
         st.rerun()
 
 # ==========================================
@@ -114,6 +178,8 @@ elif st.session_state.fase == 'configuracion':
         st.session_state.num_parejas = cantidad
         st.session_state.meta_puntos = meta
         st.session_state.fase = 'registro'
+        
+        guardar_backup()
         st.rerun()
 
 # ==========================================
@@ -136,6 +202,8 @@ elif st.session_state.fase == 'registro':
                     st.session_state.mesa_actual = [nombres_input[0], nombres_input[1]]
                     st.session_state.fila_espera = []
                     st.session_state.fase = 'torneo'
+                
+                guardar_backup()
                 st.rerun()
 
 # ==========================================
@@ -160,6 +228,8 @@ elif st.session_state.fase == 'orden_inicial':
                 st.session_state.mesa_actual = mesa
                 st.session_state.fila_espera = espera
                 st.session_state.fase = 'torneo'
+                
+                guardar_backup()
                 st.rerun()
 
 # ==========================================
@@ -176,49 +246,41 @@ elif st.session_state.fase == 'torneo':
     col_izq, col_der = st.columns([1.2, 1])
 
     with col_izq:
-        # --- MARCADOR HTML ---
         html_manos = ""
         for i, mano in enumerate(st.session_state.historial_manos_actual):
             p_a = mano['puntos'] if mano['ganador'] == pareja_a else 0
             p_b = mano['puntos'] if mano['ganador'] == pareja_b else 0
             c_a = "#ffffff" if p_a > 0 else "#555555"
             c_b = "#ffffff" if p_b > 0 else "#555555"
-            
             html_manos += f"<div style='display:flex; text-align:center; font-size:1.4em; padding:6px 0; border-bottom:1px solid #222;'><div style='width:50%; color:{c_a}; border-right:1px solid #333;'>{p_a}</div><div style='width:50%; color:{c_b};'>{p_b}</div></div>"
 
         if not html_manos:
             html_manos = "<div style='text-align:center; color:#666; padding:20px; font-style:italic;'>Inicia la partida agregando puntos abajo</div>"
 
         html_marcador = f"<div style='background-color:#0d0d0d; padding:15px; border-radius:12px; color:white; border:2px solid #2a2a2a; margin-bottom:20px; font-family:sans-serif;'><div style='display:flex; text-align:center; font-size:1.3em; font-weight:bold; padding-bottom:10px; border-bottom:2px solid #333;'><div style='width:50%; border-right:2px solid #333; padding:0 5px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;'>{pareja_a}</div><div style='width:50%; padding:0 5px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;'>{pareja_b}</div></div><div style='padding:10px 0; min-height:120px;'>{html_manos}</div><div style='display:flex; text-align:center; border-top:2px solid #333; padding-top:15px;'><div style='width:50%; border-right:2px solid #333;'><div style='font-size:3.5em; font-weight:bold; line-height:1;'>{pts_a}</div><div style='color:#888; font-size:0.9em; margin-top:5px;'>/ {meta}</div></div><div style='width:50%;'><div style='font-size:3.5em; font-weight:bold; line-height:1;'>{pts_b}</div><div style='color:#888; font-size:0.9em; margin-top:5px;'>/ {meta}</div></div></div></div>"
-        
         st.markdown(html_marcador, unsafe_allow_html=True)
 
-        # --- FORMULARIO PARA ANOTAR PUNTOS ---
         st.markdown("### ✍️ Anotar")
         with st.form("form_anotar", clear_on_submit=True):
             ganador = st.radio("¿Quién ganó?", [pareja_a, pareja_b], horizontal=True, label_visibility="collapsed")
             c1, c2 = st.columns([2, 1])
-            
             puntos_str = c1.text_input("Puntos", value="", placeholder="Escribe puntos y dale a Enter", label_visibility="collapsed")
             submit = c2.form_submit_button("➕ Añadir", type="primary", use_container_width=True)
             
             if submit:
                 if puntos_str.strip().isdigit() and int(puntos_str) > 0:
                     st.session_state.historial_manos_actual.append({"ganador": ganador, "puntos": int(puntos_str)})
+                    guardar_backup()
                     st.rerun()
                 else:
                     st.warning("⚠️ Debes escribir un número válido antes de añadir.")
 
-        # ==========================================
-        # TRUCO DE JAVASCRIPT PARA FORZAR TECLADO NUMÉRICO
-        # ==========================================
+        # Script Forzar Teclado Numérico
         components.html(
             """
             <script>
-            // Buscamos el input exacto usando el texto del placeholder que le pusimos
             const inputs = window.parent.document.querySelectorAll('input[placeholder="Escribe puntos y dale a Enter"]');
             inputs.forEach(function(input) {
-                // Le decimos al navegador del celular que saque el teclado de números
                 input.setAttribute('inputmode', 'numeric');
                 input.setAttribute('pattern', '[0-9]*');
             });
@@ -227,7 +289,6 @@ elif st.session_state.fase == 'torneo':
             height=0, width=0
         )
 
-        # --- SECCIÓN DE CORRECCIONES ---
         st.write("")
         with st.expander("🛠️ Corregir / Borrar Manos"):
             if st.session_state.historial_manos_actual:
@@ -241,10 +302,12 @@ elif st.session_state.fase == 'torneo':
                     edit_puntos = st.number_input("Corregir Puntos", min_value=1, step=1, value=mano_to_edit['puntos'])
                     if st.form_submit_button("✔️ Guardar Cambios", use_container_width=True):
                         st.session_state.historial_manos_actual[idx] = {'ganador': edit_ganador, 'puntos': edit_puntos}
+                        guardar_backup()
                         st.rerun()
                 
                 if st.button("❌ Borrar esta mano", use_container_width=True):
                     st.session_state.historial_manos_actual.pop(idx)
+                    guardar_backup()
                     st.rerun()
             else:
                 st.write("Aún no hay puntos para corregir.")
@@ -285,5 +348,8 @@ elif st.session_state.fase == 'torneo':
 
     st.divider()
     if st.button("⚠️ Terminar y Reiniciar TODO", type="secondary"):
+        # Borrar el archivo de backup para que empiece limpio de verdad
+        if os.path.exists(ARCHIVO_BACKUP):
+            os.remove(ARCHIVO_BACKUP)
         st.session_state.clear()
         st.rerun()

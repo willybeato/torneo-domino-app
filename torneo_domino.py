@@ -1,14 +1,30 @@
 import streamlit as st
 import pandas as pd
-import io
+import json
+import os
 import streamlit.components.v1 as components
 
 # 1. Configuración de la página
 st.set_page_config(page_title="Anotador de Dominó", page_icon="🎲", layout="wide")
 
+# CSS para forzar que el formulario se mantenga en 1 sola línea en celulares
+st.markdown("""
+<style>
+[data-testid="stForm"] [data-testid="stHorizontalBlock"] {
+    flex-direction: row !important;
+    flex-wrap: nowrap !important;
+    align-items: center !important;
+    gap: 10px !important;
+}
+[data-testid="stForm"] [data-testid="stHorizontalBlock"] > div {
+    flex: 1 1 0% !important;
+    min-width: 0 !important;
+}
+</style>
+""", unsafe_allow_html=True)
+
 # ==========================================
 # CÓDIGO ANTI-SUEÑO (Wake Lock API)
-# Evita que la pantalla del celular se apague sola (salva los datos)
 # ==========================================
 components.html(
     """
@@ -20,26 +36,71 @@ components.html(
                 wakeLock = await navigator.wakeLock.request('screen');
             }
         } catch (err) {
-            console.log('No se pudo activar el modo pantalla siempre encendida.');
+            console.log('No se pudo activar.');
         }
     };
-    // Solicitar al hacer clic en cualquier parte de la pantalla (requerido por iPhone/Safari)
     document.addEventListener('click', requestWakeLock, { once: true });
     requestWakeLock();
-    
     document.addEventListener('visibilitychange', () => {
-        if (document.visibilityState === 'visible') {
-            requestWakeLock();
-        }
+        if (document.visibilityState === 'visible') requestWakeLock();
     });
     </script>
     """,
     height=0, width=0
 )
 
-# 2. Inicializar variables de estado (Privadas para cada usuario)
+# ==========================================
+# FUNCIONES DE AUTO-GUARDADO (SALAS)
+# ==========================================
+def obtener_archivo_backup():
+    if 'sala' in st.session_state and st.session_state.sala:
+        # Limpiar el nombre de la sala para evitar errores en el archivo
+        nombre_limpio = "".join(x for x in st.session_state.sala if x.isalnum())
+        return f"backup_{nombre_limpio}.json"
+    return None
+
+def guardar_backup():
+    archivo = obtener_archivo_backup()
+    if archivo:
+        datos = {
+            'fase': st.session_state.fase,
+            'modo_juego': st.session_state.modo_juego,
+            'num_parejas': st.session_state.num_parejas,
+            'nombres_parejas': st.session_state.nombres_parejas,
+            'parejas_stats': st.session_state.parejas_stats,
+            'mesa_actual': st.session_state.mesa_actual,
+            'fila_espera': st.session_state.fila_espera,
+            'historial_partidas': st.session_state.historial_partidas,
+            'historial_manos_actual': st.session_state.historial_manos_actual,
+            'meta_puntos': st.session_state.meta_puntos
+        }
+        with open(archivo, 'w', encoding='utf-8') as f:
+            json.dump(datos, f)
+
+def cargar_backup(nombre_sala):
+    nombre_limpio = "".join(x for x in nombre_sala if x.isalnum())
+    archivo = f"backup_{nombre_limpio}.json"
+    if os.path.exists(archivo):
+        try:
+            with open(archivo, 'r', encoding='utf-8') as f:
+                datos = json.load(f)
+                for key, value in datos.items():
+                    st.session_state[key] = value
+            return True
+        except:
+            return False
+    return False
+
+def borrar_backup():
+    archivo = obtener_archivo_backup()
+    if archivo and os.path.exists(archivo):
+        os.remove(archivo)
+
+# 2. Inicializar variables de estado
 if 'fase' not in st.session_state:
-    st.session_state.fase = 'seleccion_modo'
+    st.session_state.fase = 'inicio_sala'
+if 'sala' not in st.session_state:
+    st.session_state.sala = ""
 if 'modo_juego' not in st.session_state:
     st.session_state.modo_juego = 'torneo'
 if 'num_parejas' not in st.session_state:
@@ -85,10 +146,8 @@ def verificar_ganador_partida(total_a, total_b, meta, pareja_a, pareja_b):
         
         num_partida = len(st.session_state.historial_partidas) + 1
         st.session_state.historial_partidas.append({
-            "Partida": f"#{num_partida}", 
-            "Ganador": ganador_partida,
-            "Perdedor": perdedor_partida, 
-            "Marcador": f"{pts_finales_ganador} a {pts_finales_perdedor}"
+            "Partida": f"#{num_partida}", "Ganador": ganador_partida,
+            "Perdedor": perdedor_partida, "Marcador": f"{pts_finales_ganador} a {pts_finales_perdedor}"
         })
         
         st.balloons()
@@ -100,31 +159,51 @@ def verificar_ganador_partida(total_a, total_b, meta, pareja_a, pareja_b):
             st.session_state.mesa_actual = [ganador_partida, siguiente]
         
         st.session_state.historial_manos_actual = []
+        guardar_backup()
         st.rerun()
 
 def convertir_df_a_csv(df):
     return df.to_csv(index=False).encode('utf-8')
 
 # ==========================================
-# FASE 0: SELECCIÓN DE MODO
+# FASE 0: INICIO Y RECUPERACIÓN DE SALA (NUEVO)
 # ==========================================
-if st.session_state.fase == 'seleccion_modo':
+if st.session_state.fase == 'inicio_sala':
     st.title("🎲 Anotador de Dominó")
+    st.info("💡 Crea un nombre para tu mesa. Si tu teléfono recarga la página, vuelve a escribir el mismo nombre para recuperar tu partida exacta.")
+    
+    with st.form("form_sala"):
+        sala_input = st.text_input("Nombre de la Mesa / Partida", placeholder="Ej: MesaViernes", value="Mesa1")
+        submit = st.form_submit_button("Entrar / Recuperar 🚀", type="primary", use_container_width=True)
+        
+        if submit:
+            if sala_input.strip() == "":
+                st.error("Escribe un nombre para la sala.")
+            else:
+                st.session_state.sala = sala_input
+                # Intentamos cargar si ya existía
+                if cargar_backup(sala_input):
+                    st.toast("¡Partida recuperada con éxito!", icon="✅")
+                    st.rerun()
+                else:
+                    # Si no existía, pasamos a elegir el modo
+                    st.session_state.fase = 'seleccion_modo'
+                    st.rerun()
+
+# ==========================================
+# FASE 0.5: SELECCIÓN DE MODO
+# ==========================================
+elif st.session_state.fase == 'seleccion_modo':
+    st.title(f"Mesa: {st.session_state.sala}")
     st.subheader("¿Cómo van a jugar hoy?")
     
-    modo = st.radio(
-        "Elige el formato:", 
-        ["🏆 Torneo (Rey de la mesa, 3 o más parejas)", "⚔️ Duelo Fijo (Solo 2 parejas, revanchas continuas)"],
-        index=0
-    )
+    modo = st.radio("Elige el formato:", ["🏆 Torneo (Rey de la mesa)", "⚔️ Duelo Fijo (Solo 2 parejas)"], index=0)
     
     if st.button("Siguiente 👉", type="primary", use_container_width=True):
-        if "Torneo" in modo:
-            st.session_state.modo_juego = 'torneo'
-        else:
-            st.session_state.modo_juego = 'duelo'
-            st.session_state.num_parejas = 2
+        st.session_state.modo_juego = 'torneo' if "Torneo" in modo else 'duelo'
+        if st.session_state.modo_juego == 'duelo': st.session_state.num_parejas = 2
         st.session_state.fase = 'configuracion'
+        guardar_backup()
         st.rerun()
 
 # ==========================================
@@ -145,6 +224,7 @@ elif st.session_state.fase == 'configuracion':
         st.session_state.num_parejas = cantidad
         st.session_state.meta_puntos = meta
         st.session_state.fase = 'registro'
+        guardar_backup()
         st.rerun()
 
 # ==========================================
@@ -167,6 +247,7 @@ elif st.session_state.fase == 'registro':
                     st.session_state.mesa_actual = [nombres_input[0], nombres_input[1]]
                     st.session_state.fila_espera = []
                     st.session_state.fase = 'torneo'
+                guardar_backup()
                 st.rerun()
 
 # ==========================================
@@ -191,6 +272,7 @@ elif st.session_state.fase == 'orden_inicial':
                 st.session_state.mesa_actual = mesa
                 st.session_state.fila_espera = espera
                 st.session_state.fase = 'torneo'
+                guardar_backup()
                 st.rerun()
 
 # ==========================================
@@ -207,6 +289,41 @@ elif st.session_state.fase == 'torneo':
     col_izq, col_der = st.columns([1.2, 1])
 
     with col_izq:
+        st.markdown("### ✍️ Anotar Rápido")
+        
+        # --- FORMULARIO EQUIPO A ---
+        with st.form("form_a", clear_on_submit=True):
+            ca1, ca2, ca3 = st.columns([1.5, 1, 1])
+            ca1.markdown(f"<div style='font-size:1.1em; font-weight:bold; padding-top:5px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;'>🔵 {pareja_a}</div>", unsafe_allow_html=True)
+            pts_a_input = ca2.text_input("pts_a", value="", placeholder="Pts...", label_visibility="collapsed")
+            submit_a = ca3.form_submit_button("➕ Añadir", type="primary", use_container_width=True)
+            
+            if submit_a:
+                if pts_a_input.strip().isdigit() and int(pts_a_input) > 0:
+                    st.session_state.historial_manos_actual.append({"ganador": pareja_a, "puntos": int(pts_a_input)})
+                    guardar_backup()
+                    st.rerun()
+                elif pts_a_input.strip() != "":
+                    st.warning("⚠️ Número inválido")
+
+        # --- FORMULARIO EQUIPO B ---
+        with st.form("form_b", clear_on_submit=True):
+            cb1, cb2, cb3 = st.columns([1.5, 1, 1])
+            cb1.markdown(f"<div style='font-size:1.1em; font-weight:bold; padding-top:5px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;'>🔴 {pareja_b}</div>", unsafe_allow_html=True)
+            pts_b_input = cb2.text_input("pts_b", value="", placeholder="Pts...", label_visibility="collapsed")
+            submit_b = cb3.form_submit_button("➕ Añadir", type="primary", use_container_width=True)
+            
+            if submit_b:
+                if pts_b_input.strip().isdigit() and int(pts_b_input) > 0:
+                    st.session_state.historial_manos_actual.append({"ganador": pareja_b, "puntos": int(pts_b_input)})
+                    guardar_backup()
+                    st.rerun()
+                elif pts_b_input.strip() != "":
+                    st.warning("⚠️ Número inválido")
+
+        st.write("") 
+
+        # --- MARCADOR HTML ---
         html_manos = ""
         for i, mano in enumerate(st.session_state.historial_manos_actual):
             p_a = mano['puntos'] if mano['ganador'] == pareja_a else 0
@@ -216,29 +333,15 @@ elif st.session_state.fase == 'torneo':
             html_manos += f"<div style='display:flex; text-align:center; font-size:1.4em; padding:6px 0; border-bottom:1px solid #222;'><div style='width:50%; color:{c_a}; border-right:1px solid #333;'>{p_a}</div><div style='width:50%; color:{c_b};'>{p_b}</div></div>"
 
         if not html_manos:
-            html_manos = "<div style='text-align:center; color:#666; padding:20px; font-style:italic;'>Inicia la partida agregando puntos abajo</div>"
+            html_manos = "<div style='text-align:center; color:#666; padding:20px; font-style:italic;'>Inicia la partida agregando puntos arriba</div>"
 
         html_marcador = f"<div style='background-color:#0d0d0d; padding:15px; border-radius:12px; color:white; border:2px solid #2a2a2a; margin-bottom:20px; font-family:sans-serif;'><div style='display:flex; text-align:center; font-size:1.3em; font-weight:bold; padding-bottom:10px; border-bottom:2px solid #333;'><div style='width:50%; border-right:2px solid #333; padding:0 5px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;'>{pareja_a}</div><div style='width:50%; padding:0 5px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;'>{pareja_b}</div></div><div style='padding:10px 0; min-height:120px;'>{html_manos}</div><div style='display:flex; text-align:center; border-top:2px solid #333; padding-top:15px;'><div style='width:50%; border-right:2px solid #333;'><div style='font-size:3.5em; font-weight:bold; line-height:1;'>{pts_a}</div><div style='color:#888; font-size:0.9em; margin-top:5px;'>/ {meta}</div></div><div style='width:50%;'><div style='font-size:3.5em; font-weight:bold; line-height:1;'>{pts_b}</div><div style='color:#888; font-size:0.9em; margin-top:5px;'>/ {meta}</div></div></div></div>"
         st.markdown(html_marcador, unsafe_allow_html=True)
 
-        st.markdown("### ✍️ Anotar")
-        with st.form("form_anotar", clear_on_submit=True):
-            ganador = st.radio("¿Quién ganó?", [pareja_a, pareja_b], horizontal=True, label_visibility="collapsed")
-            c1, c2 = st.columns([2, 1])
-            puntos_str = c1.text_input("Puntos", value="", placeholder="Escribe puntos y dale a Enter", label_visibility="collapsed")
-            submit = c2.form_submit_button("➕ Añadir", type="primary", use_container_width=True)
-            
-            if submit:
-                if puntos_str.strip().isdigit() and int(puntos_str) > 0:
-                    st.session_state.historial_manos_actual.append({"ganador": ganador, "puntos": int(puntos_str)})
-                    st.rerun()
-                else:
-                    st.warning("⚠️ Debes escribir un número válido antes de añadir.")
-
         components.html(
             """
             <script>
-            const inputs = window.parent.document.querySelectorAll('input[placeholder="Escribe puntos y dale a Enter"]');
+            const inputs = window.parent.document.querySelectorAll('input[placeholder="Pts..."]');
             inputs.forEach(function(input) {
                 input.setAttribute('inputmode', 'numeric');
                 input.setAttribute('pattern', '[0-9]*');
@@ -261,10 +364,12 @@ elif st.session_state.fase == 'torneo':
                     edit_puntos = st.number_input("Corregir Puntos", min_value=1, step=1, value=mano_to_edit['puntos'])
                     if st.form_submit_button("✔️ Guardar Cambios", use_container_width=True):
                         st.session_state.historial_manos_actual[idx] = {'ganador': edit_ganador, 'puntos': edit_puntos}
+                        guardar_backup()
                         st.rerun()
                 
                 if st.button("❌ Borrar esta mano", use_container_width=True):
                     st.session_state.historial_manos_actual.pop(idx)
+                    guardar_backup()
                     st.rerun()
             else:
                 st.write("Aún no hay puntos para corregir.")
@@ -305,5 +410,6 @@ elif st.session_state.fase == 'torneo':
 
     st.divider()
     if st.button("⚠️ Terminar y Reiniciar TODO", type="secondary"):
+        borrar_backup()
         st.session_state.clear()
         st.rerun()

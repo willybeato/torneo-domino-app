@@ -1,66 +1,14 @@
 import streamlit as st
 import pandas as pd
 import io
-import json
-import os
 import streamlit.components.v1 as components
 
 # 1. Configuración de la página
 st.set_page_config(page_title="Anotador de Dominó", page_icon="🎲", layout="wide")
 
-ARCHIVO_BACKUP = "backup_domino.json"
-
-# ==========================================
-# FUNCIONES DE AUTO-GUARDADO
-# ==========================================
-def guardar_backup():
-    """Guarda todo el estado actual en un archivo JSON."""
-    datos = {
-        'fase': st.session_state.fase,
-        'modo_juego': st.session_state.modo_juego,
-        'num_parejas': st.session_state.num_parejas,
-        'nombres_parejas': st.session_state.nombres_parejas,
-        'parejas_stats': st.session_state.parejas_stats,
-        'mesa_actual': st.session_state.mesa_actual,
-        'fila_espera': st.session_state.fila_espera,
-        'historial_partidas': st.session_state.historial_partidas,
-        'historial_manos_actual': st.session_state.historial_manos_actual,
-        'meta_puntos': st.session_state.meta_puntos
-    }
-    with open(ARCHIVO_BACKUP, 'w', encoding='utf-8') as f:
-        json.dump(datos, f)
-
-def cargar_backup():
-    """Intenta cargar los datos del archivo JSON si existe."""
-    if os.path.exists(ARCHIVO_BACKUP):
-        try:
-            with open(ARCHIVO_BACKUP, 'r', encoding='utf-8') as f:
-                datos = json.load(f)
-                for key, value in datos.items():
-                    st.session_state[key] = value
-            return True
-        except:
-            return False
-    return False
-
-# 2. Inicializar variables de estado (Con Auto-Recuperación)
-if 'fase' not in st.session_state:
-    cargado = cargar_backup()
-    if not cargado:
-        st.session_state.fase = 'seleccion_modo'
-        st.session_state.modo_juego = 'torneo'
-        st.session_state.num_parejas = 4
-        st.session_state.nombres_parejas = []
-        st.session_state.parejas_stats = {}
-        st.session_state.mesa_actual = []
-        st.session_state.fila_espera = []
-        st.session_state.historial_partidas = []
-        st.session_state.historial_manos_actual = []
-        st.session_state.meta_puntos = 200
-
 # ==========================================
 # CÓDIGO ANTI-SUEÑO (Wake Lock API)
-# Evita que la pantalla del celular se apague sola
+# Evita que la pantalla del celular se apague sola (salva los datos)
 # ==========================================
 components.html(
     """
@@ -75,8 +23,10 @@ components.html(
             console.log('No se pudo activar el modo pantalla siempre encendida.');
         }
     };
+    // Solicitar al hacer clic en cualquier parte de la pantalla (requerido por iPhone/Safari)
+    document.addEventListener('click', requestWakeLock, { once: true });
     requestWakeLock();
-    // Re-activar si el usuario cambia de pestaña y vuelve
+    
     document.addEventListener('visibilitychange', () => {
         if (document.visibilityState === 'visible') {
             requestWakeLock();
@@ -87,6 +37,27 @@ components.html(
     height=0, width=0
 )
 
+# 2. Inicializar variables de estado (Privadas para cada usuario)
+if 'fase' not in st.session_state:
+    st.session_state.fase = 'seleccion_modo'
+if 'modo_juego' not in st.session_state:
+    st.session_state.modo_juego = 'torneo'
+if 'num_parejas' not in st.session_state:
+    st.session_state.num_parejas = 4
+if 'nombres_parejas' not in st.session_state:
+    st.session_state.nombres_parejas = []
+if 'parejas_stats' not in st.session_state:
+    st.session_state.parejas_stats = {}
+if 'mesa_actual' not in st.session_state:
+    st.session_state.mesa_actual = []
+if 'fila_espera' not in st.session_state:
+    st.session_state.fila_espera = []
+if 'historial_partidas' not in st.session_state:
+    st.session_state.historial_partidas = []
+if 'historial_manos_actual' not in st.session_state:
+    st.session_state.historial_manos_actual = []
+if 'meta_puntos' not in st.session_state:
+    st.session_state.meta_puntos = 200
 
 # ==========================================
 # FUNCIONES AUXILIARES
@@ -129,8 +100,6 @@ def verificar_ganador_partida(total_a, total_b, meta, pareja_a, pareja_b):
             st.session_state.mesa_actual = [ganador_partida, siguiente]
         
         st.session_state.historial_manos_actual = []
-        
-        guardar_backup() # Guardamos antes de recargar
         st.rerun()
 
 def convertir_df_a_csv(df):
@@ -156,8 +125,6 @@ if st.session_state.fase == 'seleccion_modo':
             st.session_state.modo_juego = 'duelo'
             st.session_state.num_parejas = 2
         st.session_state.fase = 'configuracion'
-        
-        guardar_backup()
         st.rerun()
 
 # ==========================================
@@ -178,8 +145,6 @@ elif st.session_state.fase == 'configuracion':
         st.session_state.num_parejas = cantidad
         st.session_state.meta_puntos = meta
         st.session_state.fase = 'registro'
-        
-        guardar_backup()
         st.rerun()
 
 # ==========================================
@@ -202,8 +167,6 @@ elif st.session_state.fase == 'registro':
                     st.session_state.mesa_actual = [nombres_input[0], nombres_input[1]]
                     st.session_state.fila_espera = []
                     st.session_state.fase = 'torneo'
-                
-                guardar_backup()
                 st.rerun()
 
 # ==========================================
@@ -228,8 +191,6 @@ elif st.session_state.fase == 'orden_inicial':
                 st.session_state.mesa_actual = mesa
                 st.session_state.fila_espera = espera
                 st.session_state.fase = 'torneo'
-                
-                guardar_backup()
                 st.rerun()
 
 # ==========================================
@@ -270,12 +231,10 @@ elif st.session_state.fase == 'torneo':
             if submit:
                 if puntos_str.strip().isdigit() and int(puntos_str) > 0:
                     st.session_state.historial_manos_actual.append({"ganador": ganador, "puntos": int(puntos_str)})
-                    guardar_backup()
                     st.rerun()
                 else:
                     st.warning("⚠️ Debes escribir un número válido antes de añadir.")
 
-        # Script Forzar Teclado Numérico
         components.html(
             """
             <script>
@@ -302,12 +261,10 @@ elif st.session_state.fase == 'torneo':
                     edit_puntos = st.number_input("Corregir Puntos", min_value=1, step=1, value=mano_to_edit['puntos'])
                     if st.form_submit_button("✔️ Guardar Cambios", use_container_width=True):
                         st.session_state.historial_manos_actual[idx] = {'ganador': edit_ganador, 'puntos': edit_puntos}
-                        guardar_backup()
                         st.rerun()
                 
                 if st.button("❌ Borrar esta mano", use_container_width=True):
                     st.session_state.historial_manos_actual.pop(idx)
-                    guardar_backup()
                     st.rerun()
             else:
                 st.write("Aún no hay puntos para corregir.")
@@ -348,8 +305,5 @@ elif st.session_state.fase == 'torneo':
 
     st.divider()
     if st.button("⚠️ Terminar y Reiniciar TODO", type="secondary"):
-        # Borrar el archivo de backup para que empiece limpio de verdad
-        if os.path.exists(ARCHIVO_BACKUP):
-            os.remove(ARCHIVO_BACKUP)
         st.session_state.clear()
         st.rerun()

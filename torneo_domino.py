@@ -54,7 +54,6 @@ components.html(
 # ==========================================
 def obtener_archivo_backup():
     if 'sala' in st.session_state and st.session_state.sala:
-        # Limpiar el nombre de la sala para evitar errores en el archivo
         nombre_limpio = "".join(x for x in st.session_state.sala if x.isalnum())
         return f"backup_{nombre_limpio}.json"
     return None
@@ -166,7 +165,7 @@ def convertir_df_a_csv(df):
     return df.to_csv(index=False).encode('utf-8')
 
 # ==========================================
-# FASE 0: INICIO Y RECUPERACIÓN DE SALA (NUEVO)
+# FASE 0: INICIO Y RECUPERACIÓN DE SALA
 # ==========================================
 if st.session_state.fase == 'inicio_sala':
     st.title("🎲 Anotador de Dominó")
@@ -181,12 +180,10 @@ if st.session_state.fase == 'inicio_sala':
                 st.error("Escribe un nombre para la sala.")
             else:
                 st.session_state.sala = sala_input
-                # Intentamos cargar si ya existía
                 if cargar_backup(sala_input):
                     st.toast("¡Partida recuperada con éxito!", icon="✅")
                     st.rerun()
                 else:
-                    # Si no existía, pasamos a elegir el modo
                     st.session_state.fase = 'seleccion_modo'
                     st.rerun()
 
@@ -291,10 +288,11 @@ elif st.session_state.fase == 'torneo':
     with col_izq:
         st.markdown("### ✍️ Anotar Rápido")
         
-        # --- FORMULARIO EQUIPO A ---
+        # --- FORMULARIO EQUIPO A (Ahora muestra los puntos totales al lado) ---
         with st.form("form_a", clear_on_submit=True):
             ca1, ca2, ca3 = st.columns([1.5, 1, 1])
-            ca1.markdown(f"<div style='font-size:1.1em; font-weight:bold; padding-top:5px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;'>🔵 {pareja_a}</div>", unsafe_allow_html=True)
+            # Se agregó el puntaje {pts_a} en color verde claro al lado del nombre
+            ca1.markdown(f"<div style='font-size:1.1em; font-weight:bold; padding-top:5px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;'>🔵 {pareja_a} <span style='color:#4CAF50; font-size:1.1em;'>({pts_a})</span></div>", unsafe_allow_html=True)
             pts_a_input = ca2.text_input("pts_a", value="", placeholder="Pts...", label_visibility="collapsed")
             submit_a = ca3.form_submit_button("➕ Añadir", type="primary", use_container_width=True)
             
@@ -306,10 +304,11 @@ elif st.session_state.fase == 'torneo':
                 elif pts_a_input.strip() != "":
                     st.warning("⚠️ Número inválido")
 
-        # --- FORMULARIO EQUIPO B ---
+        # --- FORMULARIO EQUIPO B (Ahora muestra los puntos totales al lado) ---
         with st.form("form_b", clear_on_submit=True):
             cb1, cb2, cb3 = st.columns([1.5, 1, 1])
-            cb1.markdown(f"<div style='font-size:1.1em; font-weight:bold; padding-top:5px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;'>🔴 {pareja_b}</div>", unsafe_allow_html=True)
+            # Se agregó el puntaje {pts_b} en color rojo claro al lado del nombre
+            cb1.markdown(f"<div style='font-size:1.1em; font-weight:bold; padding-top:5px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;'>🔴 {pareja_b} <span style='color:#FF6B6B; font-size:1.1em;'>({pts_b})</span></div>", unsafe_allow_html=True)
             pts_b_input = cb2.text_input("pts_b", value="", placeholder="Pts...", label_visibility="collapsed")
             submit_b = cb3.form_submit_button("➕ Añadir", type="primary", use_container_width=True)
             
@@ -335,7 +334,8 @@ elif st.session_state.fase == 'torneo':
         if not html_manos:
             html_manos = "<div style='text-align:center; color:#666; padding:20px; font-style:italic;'>Inicia la partida agregando puntos arriba</div>"
 
-        html_marcador = f"<div style='background-color:#0d0d0d; padding:15px; border-radius:12px; color:white; border:2px solid #2a2a2a; margin-bottom:20px; font-family:sans-serif;'><div style='display:flex; text-align:center; font-size:1.3em; font-weight:bold; padding-bottom:10px; border-bottom:2px solid #333;'><div style='width:50%; border-right:2px solid #333; padding:0 5px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;'>{pareja_a}</div><div style='width:50%; padding:0 5px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;'>{pareja_b}</div></div><div style='padding:10px 0; min-height:120px;'>{html_manos}</div><div style='display:flex; text-align:center; border-top:2px solid #333; padding-top:15px;'><div style='width:50%; border-right:2px solid #333;'><div style='font-size:3.5em; font-weight:bold; line-height:1;'>{pts_a}</div><div style='color:#888; font-size:0.9em; margin-top:5px;'>/ {meta}</div></div><div style='width:50%;'><div style='font-size:3.5em; font-weight:bold; line-height:1;'>{pts_b}</div><div style='color:#888; font-size:0.9em; margin-top:5px;'>/ {meta}</div></div></div></div>"
+        # También agregué los puntos ({pts_a} y {pts_b}) al encabezado oscuro de la tabla
+        html_marcador = f"<div style='background-color:#0d0d0d; padding:15px; border-radius:12px; color:white; border:2px solid #2a2a2a; margin-bottom:20px; font-family:sans-serif;'><div style='display:flex; text-align:center; font-size:1.3em; font-weight:bold; padding-bottom:10px; border-bottom:2px solid #333;'><div style='width:50%; border-right:2px solid #333; padding:0 5px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;'>{pareja_a} <span style='color:#aaa; font-size:0.8em;'>({pts_a})</span></div><div style='width:50%; padding:0 5px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;'>{pareja_b} <span style='color:#aaa; font-size:0.8em;'>({pts_b})</span></div></div><div style='padding:10px 0; min-height:120px;'>{html_manos}</div><div style='display:flex; text-align:center; border-top:2px solid #333; padding-top:15px;'><div style='width:50%; border-right:2px solid #333;'><div style='font-size:3.5em; font-weight:bold; line-height:1;'>{pts_a}</div><div style='color:#888; font-size:0.9em; margin-top:5px;'>/ {meta}</div></div><div style='width:50%;'><div style='font-size:3.5em; font-weight:bold; line-height:1;'>{pts_b}</div><div style='color:#888; font-size:0.9em; margin-top:5px;'>/ {meta}</div></div></div></div>"
         st.markdown(html_marcador, unsafe_allow_html=True)
 
         components.html(
